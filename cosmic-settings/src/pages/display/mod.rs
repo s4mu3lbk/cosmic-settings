@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 pub mod arrangement;
-// pub mod night_light;
+pub mod night_light;
 
 use crate::{app, pages};
 use arrangement::Arrangement;
 use cosmic::iced::core::text::{Ellipsize, EllipsizeHeightLimit};
+use cosmic_config::CosmicConfigEntry;
 use cosmic::iced::widget::scrollable::RelativeOffset;
 use cosmic::iced::{Alignment, Length, stream, time};
 use cosmic::widget::{
@@ -51,17 +52,19 @@ pub enum Mirroring {
 }
 
 /// Night light preferences
-// #[derive(Clone, Copy, Debug)]
-// pub enum NightLight {
-/// Toggles night light's automatic scheduling.
-//     AutoSchedule(bool),
-/// Sets the night light schedule.
-//     ManualSchedule,
-/// Changes the preferred night light temperature.
-//     Temperature(f32),
-/// Toggles night light mode
-//     Toggle(bool),
-// }
+#[derive(Clone, Copy, Debug)]
+pub enum NightLight {
+    /// Toggles night light's automatic scheduling.
+    AutoSchedule(bool),
+    /// Sets the night light schedule start time (hour, minute).
+    ScheduleStart(u16, u16),
+    /// Sets the night light schedule end time (hour, minute).
+    ScheduleEnd(u16, u16),
+    /// Changes the preferred night light temperature.
+    Temperature(f32),
+    /// Toggles night light mode
+    Toggle(bool),
+}
 
 #[derive(Clone, Debug)]
 pub enum Message {
@@ -84,9 +87,7 @@ pub enum Message {
     /// Configures mirroring status of a display.
     Mirroring(Mirroring),
     /// Handle night light preferences.
-    // NightLight(NightLight),
-    /// Show the night light mode context drawer.
-    // NightLightContext,
+    NightLight(NightLight),
     /// Set the orientation of a display.
     Orientation(Transform),
     /// Pan the displays view
@@ -143,7 +144,8 @@ pub struct Page {
     hotplug_handle: Option<(oneshot::Sender<()>, cosmic::iced::task::Handle)>,
     config: Config,
     cache: ViewCache,
-    // context: Option<ContextDrawer>,
+    night_light_context: cosmic_config::Config,
+    night_light_config: cosmic_settings_config::night_light::Config,
     display_arrangement_scrollable: widget::Id,
     /// Tracks the last pan status.
     last_pan: f32,
@@ -157,6 +159,12 @@ pub struct Page {
 
 impl Default for Page {
     fn default() -> Self {
+        let night_light_context = cosmic_settings_config::night_light::context()
+            .expect("Failed to load night light config context");
+        let night_light_config =
+            cosmic_settings_config::night_light::Config::get_entry(&night_light_context)
+                .unwrap_or_else(|(_, config)| config);
+
         Self {
             refreshing_page: Arc::new(AtomicBool::new(false)),
             list: List::default(),
@@ -168,7 +176,8 @@ impl Default for Page {
             hotplug_handle: None,
             config: Config::default(),
             cache: ViewCache::default(),
-            // context: None,
+            night_light_context,
+            night_light_config,
             display_arrangement_scrollable: widget::Id::unique(),
             last_pan: 0.5,
             dialog: None,
@@ -213,15 +222,18 @@ impl page::Page<crate::pages::Message> for Page {
     ) -> Option<page::Content> {
         Some(vec![
             // Night light
-            // sections.insert(
-            //     Section::default()
-            //         .descriptions(vec![
-            //             text::NIGHT_LIGHT.as_str().into(),
-            //             text::NIGHT_LIGHT_AUTO.as_str().into(),
-            //             text::NIGHT_LIGHT_DESCRIPTION.as_str().into(),
-            //         ])
-            //         .view::<Page>(move |_binder, page, _section| page.night_light_view()),
-            // ),
+            sections.insert({
+                crate::slab!(descriptions {
+                    night_light = fl!("night-light");
+                    night_light_auto = fl!("night-light", "auto");
+                    night_light_desc = fl!("night-light", "desc");
+                });
+
+                Section::default()
+                    .title(fl!("night-light"))
+                    .descriptions(descriptions)
+                    .view::<Page>(move |_binder, page, _section| page.night_light_view())
+            }),
             // Display arrangement
             sections.insert(display_arrangement()),
             // Display configuration
@@ -592,14 +604,30 @@ impl Page {
                 } // Mirroring::ProjectToAll => (),
             },
 
-            // Message::NightLight(night_light) => {}
-            //
-            // Message::NightLightContext => {
-            //     self.context = Some(ContextDrawer::NightLight);
-            //     return cosmic::task::message(app::Message::OpenContextDrawer(
-            //         text::NIGHT_LIGHT.clone().into(),
-            //     ));
-            // }
+            Message::NightLight(night_light) => {
+                let config = &mut self.night_light_config;
+                match night_light {
+                    NightLight::Toggle(value) => config.enabled = value,
+                    NightLight::AutoSchedule(value) => config.auto_schedule = value,
+                    NightLight::ScheduleStart(hour, minute) => {
+                        config.schedule_start_minutes = hour * 60 + minute;
+                    }
+                    NightLight::ScheduleEnd(hour, minute) => {
+                        config.schedule_end_minutes = hour * 60 + minute;
+                    }
+                    NightLight::Temperature(value) => {
+                        config.temperature = value.clamp(
+                            cosmic_settings_config::night_light::MIN_TEMPERATURE,
+                            cosmic_settings_config::night_light::MAX_TEMPERATURE,
+                        );
+                    }
+                }
+
+                if let Err(err) = self.night_light_config.write_entry(&self.night_light_context) {
+                    tracing::error!(?err, "Failed to write night light config");
+                }
+            }
+
             Message::Orientation(orientation) => return self.set_orientation(orientation),
 
             Message::Pan(pan) => {

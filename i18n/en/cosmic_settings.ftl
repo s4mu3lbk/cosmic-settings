@@ -600,6 +600,9 @@ mirroring = Mirroring
 night-light = Night light
     .auto = Automatic (sunset to sunrise)
     .desc = Reduce blue light with warmer colors
+    .temperature = Color temperature
+    .start = Start time
+    .end = End time
 
 orientation = Orientation
     .standard = Standard
