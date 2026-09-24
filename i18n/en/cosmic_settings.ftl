@@ -598,8 +598,11 @@ mirroring = Mirroring
     }
 
 night-light = Night light
-    .auto = Automatic (sunset to sunrise)
     .desc = Reduce blue light with warmer colors
+    .schedule = Schedule
+    .schedule-always-on = Always on
+    .schedule-custom = Custom schedule
+    .schedule-sunset = Sunset to sunrise
     .temperature = Color temperature
     .start = Start time
     .end = End time

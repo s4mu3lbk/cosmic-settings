@@ -54,8 +54,8 @@ pub enum Mirroring {
 /// Night light preferences
 #[derive(Clone, Copy, Debug)]
 pub enum NightLight {
-    /// Toggles night light's automatic scheduling.
-    AutoSchedule(bool),
+    /// Sets the night light schedule mode (dropdown selection index).
+    ScheduleMode(usize),
     /// Sets the night light schedule start time (hour, minute).
     ScheduleStart(u16, u16),
     /// Sets the night light schedule end time (hour, minute).
@@ -225,7 +225,6 @@ impl page::Page<crate::pages::Message> for Page {
             sections.insert({
                 crate::slab!(descriptions {
                     night_light = fl!("night-light");
-                    night_light_auto = fl!("night-light", "auto");
                     night_light_desc = fl!("night-light", "desc");
                 });
 
@@ -608,7 +607,9 @@ impl Page {
                 let config = &mut self.night_light_config;
                 match night_light {
                     NightLight::Toggle(value) => config.enabled = value,
-                    NightLight::AutoSchedule(value) => config.auto_schedule = value,
+                    NightLight::ScheduleMode(index) => {
+                        self::night_light::apply_schedule_mode(config, index);
+                    }
                     NightLight::ScheduleStart(hour, minute) => {
                         config.schedule_start_minutes = hour * 60 + minute;
                     }

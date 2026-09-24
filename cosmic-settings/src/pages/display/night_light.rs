@@ -17,6 +17,41 @@ static MINUTE_OPTIONS: LazyLock<Vec<String>> =
 
 static MINUTE_VALUES: [u16; 4] = [0, 15, 30, 45];
 
+/// Returns the index of the schedule mode selected in the dropdown.
+///
+/// The indices match the schedule mode labels in the view: 0 is sunset to
+/// sunrise, 1 is a custom schedule, and 2 is always on.
+pub fn schedule_mode_index(config: &cosmic_settings_config::night_light::Config) -> usize {
+    if config.always_on {
+        2
+    } else if config.auto_schedule {
+        0
+    } else {
+        1
+    }
+}
+
+/// Applies the schedule mode chosen in the dropdown to the config.
+pub fn apply_schedule_mode(
+    config: &mut cosmic_settings_config::night_light::Config,
+    index: usize,
+) {
+    match index {
+        0 => {
+            config.auto_schedule = true;
+            config.always_on = false;
+        }
+        1 => {
+            config.auto_schedule = false;
+            config.always_on = false;
+        }
+        _ => {
+            config.auto_schedule = false;
+            config.always_on = true;
+        }
+    }
+}
+
 fn time_selectors(
     hour: u16,
     minute: u16,
@@ -75,14 +110,21 @@ impl super::Page {
                     ),
             );
 
+            let schedule_modes = vec![
+                fl!("night-light", "schedule-sunset"),
+                fl!("night-light", "schedule-custom"),
+                fl!("night-light", "schedule-always-on"),
+            ];
+
             section = section.add(
-                settings::item::builder(fl!("night-light", "auto"))
-                    .control(toggler(config.auto_schedule).on_toggle(|enable| {
-                        Message::NightLight(NightLight::AutoSchedule(enable))
-                    })),
+                settings::item::builder(fl!("night-light", "schedule")).control(dropdown(
+                    schedule_modes,
+                    Some(schedule_mode_index(config)),
+                    |index| Message::NightLight(NightLight::ScheduleMode(index)),
+                )),
             );
 
-            if !config.auto_schedule {
+            if schedule_mode_index(config) == 1 {
                 let start_hour = config.schedule_start_minutes / 60;
                 let start_minute = config.schedule_start_minutes % 60;
                 let end_hour = config.schedule_end_minutes / 60;
@@ -117,5 +159,50 @@ impl super::Page {
         section
             .apply(Element::from)
             .map(crate::pages::Message::Displays)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cosmic_settings_config::night_light::Config;
+
+    use super::{apply_schedule_mode, schedule_mode_index};
+
+    #[test]
+    fn schedule_mode_index_matches_config() {
+        let mut config = Config::default();
+        assert_eq!(schedule_mode_index(&config), 0);
+
+        config.auto_schedule = false;
+        assert_eq!(schedule_mode_index(&config), 1);
+
+        config.always_on = true;
+        assert_eq!(schedule_mode_index(&config), 2);
+    }
+
+    #[test]
+    fn apply_schedule_mode_sets_config_fields() {
+        let mut config = Config::default();
+
+        apply_schedule_mode(&mut config, 2);
+        assert!(config.always_on);
+        assert!(!config.auto_schedule);
+
+        apply_schedule_mode(&mut config, 1);
+        assert!(!config.always_on);
+        assert!(!config.auto_schedule);
+
+        apply_schedule_mode(&mut config, 0);
+        assert!(!config.always_on);
+        assert!(config.auto_schedule);
+    }
+
+    #[test]
+    fn schedule_mode_roundtrip() {
+        for index in 0..3 {
+            let mut config = Config::default();
+            apply_schedule_mode(&mut config, index);
+            assert_eq!(schedule_mode_index(&config), index);
+        }
     }
 }
